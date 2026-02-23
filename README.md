@@ -22,3 +22,17 @@ npm start
 - **Gesamtlatenz (ms)**: volle End-to-End-Dauer
 - **Tokens / Sekunde**: effektiver Output-Durchsatz
 - **Input / Output Tokens** (falls vom Provider geliefert)
+
+## Gemini Thinking / TTFT
+
+- Über `GEMINI_THINKING_BUDGET` kannst du den Denk-Budget-Wert setzen.
+- `GEMINI_THINKING_BUDGET=0` deaktiviert Thinking und liefert i.d.R. die niedrigste TTFT.
+- Wenn der Wert leer/ungesetzt ist, nutzt Gemini den Provider-Default.
+
+Beispiel `.env`:
+
+```bash
+GEMINI_MODEL=gemini-3-flash-preview
+GEMINI_THINKING_BUDGET=0
+```
+
