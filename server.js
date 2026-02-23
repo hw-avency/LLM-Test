@@ -94,8 +94,8 @@ function loadEnv(filePath) {
 }
 
 async function serveStaticFile(pathname, res) {
-  const normalized = pathname === '/' ? '/index.html' : pathname;
-  const safePath = path.normalize(normalized).replace(/^\.\.(\/|\\|$)/, '');
+  const normalized = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
+  const safePath = path.normalize(normalized).replace(/^(\.\.(\/|\\|$))+/, '');
   const absolutePath = path.join(publicDir, safePath);
 
   if (!absolutePath.startsWith(publicDir)) {
