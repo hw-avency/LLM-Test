@@ -32,6 +32,10 @@ const MODEL_OPTIONS = {
   gemini: {
     provider: 'gemini',
     model: process.env.GEMINI_MODEL || 'gemini-3-flash'
+  },
+  azure_foundry: {
+    provider: 'azure_foundry',
+    model: process.env.AZURE_FOUNDRY_MODEL || 'gpt-5.2'
   }
 };
 
@@ -194,9 +198,7 @@ async function runProviderRequest(selected, prompt, thinkingMode, onProgress) {
   });
 
   try {
-    const result = selected.provider === 'openai'
-      ? await callOpenAI(selected.model, prompt, thinkingMode, onProgress)
-      : await callGemini(selected.model, prompt, thinkingMode, onProgress);
+    const result = await runModelCall(selected, prompt, thinkingMode, onProgress);
 
     return {
       provider: selected.provider,
@@ -213,6 +215,22 @@ async function runProviderRequest(selected, prompt, thinkingMode, onProgress) {
       error: true
     };
   }
+}
+
+async function runModelCall(selected, prompt, thinkingMode, onProgress) {
+  if (selected.provider === 'openai') {
+    return callOpenAI(selected.model, prompt, thinkingMode, onProgress);
+  }
+
+  if (selected.provider === 'gemini') {
+    return callGemini(selected.model, prompt, thinkingMode, onProgress);
+  }
+
+  if (selected.provider === 'azure_foundry') {
+    return callAzureFoundry(selected.model, prompt, thinkingMode, onProgress);
+  }
+
+  throw new Error(`Unsupported provider: ${selected.provider}`);
 }
 
 function writeNdjsonLine(res, payload) {
@@ -543,5 +561,141 @@ async function callGeminiNonStreaming(model, requestBody, apiKey) {
     text,
     usage: payload?.usageMetadata ?? null,
     finishReason: payload?.candidates?.[0]?.finishReason ?? null
+  };
+}
+
+async function callAzureFoundry(model, prompt, thinkingMode, onProgress) {
+  const endpoint = process.env.AZURE_FOUNDRY_ENDPOINT;
+  const apiKey = process.env.AZURE_FOUNDRY_API_KEY;
+  const deployment = process.env.AZURE_FOUNDRY_DEPLOYMENT;
+  const apiVersion = process.env.AZURE_FOUNDRY_API_VERSION || '2024-10-21';
+
+  if (!endpoint) throw new Error('AZURE_FOUNDRY_ENDPOINT is not configured.');
+  if (!apiKey) throw new Error('AZURE_FOUNDRY_API_KEY is not configured.');
+  if (!deployment) throw new Error('AZURE_FOUNDRY_DEPLOYMENT is not configured.');
+
+  const normalizedEndpoint = endpoint.replace(/\/+$/u, '');
+  const reasoningEffort = OPENAI_REASONING_PRESETS[thinkingMode] ?? OPENAI_REASONING_PRESETS.off;
+  const requestBody = {
+    messages: [{ role: 'user', content: prompt }],
+    stream: true,
+    stream_options: { include_usage: true }
+  };
+
+  if (reasoningEffort !== OPENAI_REASONING_PRESETS.off) {
+    requestBody.reasoning_effort = reasoningEffort;
+  }
+
+  const start = performance.now();
+  const url = `${normalizedEndpoint}/openai/deployments/${encodeURIComponent(deployment)}/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'api-key': apiKey
+    },
+    body: JSON.stringify(requestBody)
+  });
+
+  if (!response.ok || !response.body) {
+    throw new Error(`Azure Foundry request failed: ${response.status} ${await response.text()}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let text = '';
+  let firstChunkMs = null;
+  let firstTokenMs = null;
+  let usage = null;
+  let finishReason = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    if (firstChunkMs === null) {
+      firstChunkMs = performance.now() - start;
+      onProgress?.({
+        provider: 'azure_foundry',
+        model,
+        stage: 'connected',
+        elapsedMs: Number(firstChunkMs.toFixed(2)),
+        message: 'Erster Streaming-Chunk eingetroffen'
+      });
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split(/\r?\n\r?\n/u);
+    buffer = parts.pop() ?? '';
+
+    for (const part of parts) {
+      const lines = part.split('\n').map((line) => line.trim()).filter(Boolean);
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') continue;
+
+        try {
+          const event = JSON.parse(payload);
+          const deltaText = event?.choices?.[0]?.delta?.content;
+          if (typeof deltaText === 'string' && deltaText.length > 0) {
+            if (firstTokenMs === null) {
+              firstTokenMs = performance.now() - start;
+              onProgress?.({
+                provider: 'azure_foundry',
+                model,
+                stage: 'first_token',
+                elapsedMs: Number(firstTokenMs.toFixed(2)),
+                message: 'Erstes sichtbares Token'
+              });
+            }
+            text += deltaText;
+          }
+
+          if (event?.usage) usage = event.usage;
+          const reason = event?.choices?.[0]?.finish_reason;
+          if (reason) finishReason = reason;
+        } catch {
+          // ignore malformed chunks
+        }
+      }
+    }
+  }
+
+  const totalMs = performance.now() - start;
+  onProgress?.({
+    provider: 'azure_foundry',
+    model,
+    stage: 'completed',
+    elapsedMs: Number(totalMs.toFixed(2)),
+    message: 'Antwort vollständig'
+  });
+
+  const estimatedVisibleTokens = estimateVisibleTokens(text);
+  const outputTokens = usage?.completion_tokens
+    ?? (estimatedVisibleTokens > 0 ? estimatedVisibleTokens : null);
+  const billedOutputTokens = outputTokens;
+  const tokensPerSecond = outputTokens && totalMs > 0
+    ? Number((outputTokens / (totalMs / 1000)).toFixed(2))
+    : null;
+
+  return {
+    text: text.trim() || '[No text returned]',
+    metrics: {
+      ttftMs: firstChunkMs ? Number(firstChunkMs.toFixed(2)) : null,
+      firstTokenMs: firstTokenMs ? Number(firstTokenMs.toFixed(2)) : null,
+      totalLatencyMs: Number(totalMs.toFixed(2)),
+      postTtftLatencyMs: firstChunkMs ? Number((totalMs - firstChunkMs).toFixed(2)) : null,
+      generationMs: firstTokenMs ? Number((totalMs - firstTokenMs).toFixed(2)) : null,
+      tokensPerSecond,
+      inputTokens: usage?.prompt_tokens ?? null,
+      outputTokens,
+      billedOutputTokens,
+      finishReason: finishReason ?? 'completed',
+      thinkingBudget: reasoningEffort,
+      streamingEnabled: true
+    }
   };
 }
