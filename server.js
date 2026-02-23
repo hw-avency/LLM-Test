@@ -20,7 +20,7 @@ const THINKING_PRESETS = {
 };
 
 const OPENAI_REASONING_PRESETS = {
-  off: 'minimal',
+  off: 'none',
   on: 'medium'
 };
 
@@ -215,6 +215,8 @@ async function callOpenAI(model, prompt, thinkingMode) {
     const { value, done } = await reader.read();
     if (done) break;
 
+    if (ttftMs === null) ttftMs = performance.now() - start;
+
     buffer += decoder.decode(value, { stream: true });
     const parts = buffer.split('\n\n');
     buffer = parts.pop() ?? '';
@@ -307,6 +309,8 @@ async function callGemini(model, prompt, thinkingMode) {
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
+
+    if (ttftMs === null) ttftMs = performance.now() - start;
 
     buffer += decoder.decode(value, { stream: true });
     const parts = buffer.split('\n\n');
