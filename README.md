@@ -20,6 +20,9 @@ npm start
 
 - **TTFT (ms)**: Zeit bis zum ersten Token
 - **Gesamtlatenz (ms)**: volle End-to-End-Dauer
+- **Zeit nach TTFT (ms)**: Rest der Latenz nach dem ersten Chunk (`Gesamtlatenz - TTFT`)
+- **Erstes sichtbares Token (ms)**: Zeitpunkt, an dem wirklich Text sichtbar wird
+- **Generierungszeit (ms)**: Zeit vom ersten sichtbaren Token bis zum Ende
 - **Tokens / Sekunde**: effektiver Output-Durchsatz
 - **Input Tokens** (falls vom Provider geliefert)
 - **Output Tokens (sichtbar)**: geschätzte Tokens der angezeigten Antwort
@@ -37,3 +40,14 @@ Beispiel `.env`:
 GEMINI_MODEL=gemini-3-flash-preview
 GEMINI_THINKING_BUDGET=0
 ```
+
+## Live-Timeline ("TTFT spürbar machen")
+
+Die UI zeigt pro Provider jetzt live vier Phasen an:
+
+1. Start
+2. Erster Streaming-Chunk (TTFT)
+3. Erstes sichtbares Token
+4. Fertig
+
+So wird der Bereich zwischen TTFT und Gesamtlatenz sichtbar: typischerweise Modell-Generierung, Token-Ausgabe und ggf. Reasoning-Overhead.
