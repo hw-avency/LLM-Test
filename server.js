@@ -99,6 +99,18 @@ function loadEnv(filePath) {
   }
 }
 
+function getGeminiThinkingBudget() {
+  const raw = process.env.GEMINI_THINKING_BUDGET;
+  if (raw === undefined || raw === '') return undefined;
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error('GEMINI_THINKING_BUDGET must be a non-negative number.');
+  }
+
+  return Math.floor(parsed);
+}
+
 async function serveStaticFile(pathname, res) {
   const normalized = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
   const safePath = path.normalize(normalized).replace(/^(\.\.(\/|\\|$))+/, '');
@@ -225,13 +237,26 @@ async function callGemini(model, prompt) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
 
+  const thinkingBudget = getGeminiThinkingBudget();
+  const requestBody = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }]
+  };
+
+  if (thinkingBudget !== undefined) {
+    requestBody.generationConfig = {
+      thinkingConfig: {
+        thinkingBudget
+      }
+    };
+  }
+
   const start = performance.now();
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`;
 
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }] })
+    body: JSON.stringify(requestBody)
   });
 
   if (!response.ok || !response.body) {
