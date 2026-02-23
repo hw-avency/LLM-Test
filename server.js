@@ -19,6 +19,11 @@ const THINKING_PRESETS = {
   on: 1024
 };
 
+const OPENAI_REASONING_PRESETS = {
+  off: 'minimal',
+  on: 'medium'
+};
+
 const MODEL_OPTIONS = {
   openai: {
     provider: 'openai',
@@ -59,7 +64,7 @@ const server = http.createServer(async (req, res) => {
 
       const tasks = Object.values(MODEL_OPTIONS).map(async (selected) => {
         const result = selected.provider === 'openai'
-          ? await callOpenAI(selected.model, prompt)
+          ? await callOpenAI(selected.model, prompt, thinkingMode)
           : await callGemini(selected.model, prompt, thinkingMode);
 
         return {
@@ -100,7 +105,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Mini LLM Gateway running on http://${HOST}:${PORT}`);
+  console.log(`LLM Performance Vergleich running on http://${HOST}:${PORT}`);
 });
 
 function loadEnv(filePath) {
@@ -173,9 +178,11 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
-async function callOpenAI(model, prompt) {
+async function callOpenAI(model, prompt, thinkingMode) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY is not configured.');
+
+  const reasoningEffort = OPENAI_REASONING_PRESETS[thinkingMode] ?? OPENAI_REASONING_PRESETS.off;
 
   const start = performance.now();
   const response = await fetch('https://api.openai.com/v1/responses', {
@@ -184,7 +191,12 @@ async function callOpenAI(model, prompt) {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ model, input: prompt, stream: true })
+    body: JSON.stringify({
+      model,
+      input: prompt,
+      stream: true,
+      reasoning: { effort: reasoningEffort }
+    })
   });
 
   if (!response.ok || !response.body) {
@@ -197,6 +209,7 @@ async function callOpenAI(model, prompt) {
   let text = '';
   let ttftMs = null;
   let usage = null;
+  let finishReason = null;
 
   while (true) {
     const { value, done } = await reader.read();
@@ -219,8 +232,15 @@ async function callOpenAI(model, prompt) {
             if (ttftMs === null) ttftMs = performance.now() - start;
             text += event.delta;
           }
+
+          if (event.type === 'response.output_item.done') {
+            const itemFinishReason = event.item?.finish_reason ?? event.item?.status;
+            if (itemFinishReason) finishReason = itemFinishReason;
+          }
+
           if (event.type === 'response.completed') {
             usage = event.response?.usage ?? null;
+            finishReason = event.response?.status ?? finishReason;
             if (!text && event.response?.output_text) text = event.response.output_text;
           }
         } catch {
@@ -242,7 +262,9 @@ async function callOpenAI(model, prompt) {
       totalLatencyMs: Number(totalMs.toFixed(2)),
       tokensPerSecond,
       inputTokens: usage?.input_tokens ?? null,
-      outputTokens: usage?.output_tokens ?? null
+      outputTokens: usage?.output_tokens ?? null,
+      finishReason: finishReason ?? 'completed',
+      thinkingBudget: reasoningEffort
     }
   };
 }
@@ -299,11 +321,12 @@ async function callGemini(model, prompt, thinkingMode) {
 
         try {
           const event = JSON.parse(payload);
-          const chunkText = event?.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') || '';
-          if (chunkText) {
-            if (ttftMs === null) ttftMs = performance.now() - start;
-            text += chunkText;
-          }
+          if (ttftMs === null) ttftMs = performance.now() - start;
+
+          const chunkText = event?.candidates?.[0]?.content?.parts
+            ?.map((part) => (typeof part?.text === 'string' ? part.text : ''))
+            .join('') || '';
+          if (chunkText) text += chunkText;
           if (event?.usageMetadata) usage = event.usageMetadata;
           if (event?.candidates?.[0]?.finishReason) finishReason = event.candidates[0].finishReason;
         } catch {

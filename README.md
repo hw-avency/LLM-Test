@@ -1,4 +1,4 @@
-# Mini LLM Gateway
+# LLM Performance Vergleich
 
 Kleine Web-App mit Chat UI zur Messung von LLM-Performance für:
 
@@ -35,4 +35,3 @@ Beispiel `.env`:
 GEMINI_MODEL=gemini-3-flash-preview
 GEMINI_THINKING_BUDGET=0
 ```
-
