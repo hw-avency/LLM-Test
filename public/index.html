@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mini LLM Gateway</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Mini LLM Gateway</h1>
+      <p class="subtitle">Vergleiche Antwortzeiten zwischen OpenAI GPT‑5.2 und Gemini 3 Flash.</p>
+
+      <section class="controls">
+        <label for="modelSelect">Modell</label>
+        <select id="modelSelect"></select>
+      </section>
+
+      <section class="chat-panel">
+        <div id="chatWindow" class="chat-window" aria-live="polite"></div>
+        <form id="chatForm" class="chat-form">
+          <textarea id="promptInput" rows="3" placeholder="Frage hier eingeben..." required></textarea>
+          <button type="submit" id="sendBtn">Senden</button>
+        </form>
+      </section>
+
+      <section class="metrics-panel">
+        <h2>Performance</h2>
+        <dl id="metrics"></dl>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
