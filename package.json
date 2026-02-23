@@ -1,0 +1,11 @@
+{
+  "name": "mini-llm-gateway",
+  "version": "1.0.0",
+  "description": "Mini LLM Gateway UI with latency metrics for OpenAI and Gemini",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  }
+}
