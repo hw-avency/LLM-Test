@@ -269,6 +269,7 @@ async function callGemini(model, prompt) {
   let text = '';
   let ttftMs = null;
   let usage = null;
+  let finishReason = null;
 
   while (true) {
     const { value, done } = await reader.read();
@@ -293,6 +294,7 @@ async function callGemini(model, prompt) {
             text += chunkText;
           }
           if (event?.usageMetadata) usage = event.usageMetadata;
+          if (event?.candidates?.[0]?.finishReason) finishReason = event.candidates[0].finishReason;
         } catch {
           // ignore malformed chunks
         }
@@ -301,6 +303,16 @@ async function callGemini(model, prompt) {
   }
 
   const totalMs = performance.now() - start;
+
+  if (!text.trim()) {
+    const fallback = await callGeminiNonStreaming(model, requestBody, apiKey);
+    if (fallback.text) {
+      text = fallback.text;
+      usage = fallback.usage ?? usage;
+      finishReason = fallback.finishReason ?? finishReason;
+    }
+  }
+
   const outputTokens = usage?.candidatesTokenCount ?? null;
   const tokensPerSecond = outputTokens && totalMs > 0
     ? Number((outputTokens / (totalMs / 1000)).toFixed(2))
@@ -313,7 +325,34 @@ async function callGemini(model, prompt) {
       totalLatencyMs: Number(totalMs.toFixed(2)),
       tokensPerSecond,
       inputTokens: usage?.promptTokenCount ?? null,
-      outputTokens
+      outputTokens,
+      finishReason
     }
+  };
+}
+
+async function callGeminiNonStreaming(model, requestBody, apiKey) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody)
+  });
+
+  if (!response.ok) {
+    return { text: '', usage: null };
+  }
+
+  const payload = await response.json();
+  const text = payload?.candidates?.[0]?.content?.parts
+    ?.map((part) => (typeof part?.text === 'string' ? part.text : ''))
+    .join('')
+    .trim() || '';
+
+  return {
+    text,
+    usage: payload?.usageMetadata ?? null,
+    finishReason: payload?.candidates?.[0]?.finishReason ?? null
   };
 }
