@@ -28,6 +28,10 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
 
+    if (req.method === 'GET' && url.pathname === '/healthz') {
+      return sendJson(res, 200, { ok: true });
+    }
+
     if (req.method === 'GET' && url.pathname === '/api/models') {
       return sendJson(res, 200, Object.entries(MODEL_OPTIONS).map(([id, meta]) => ({
         id,
@@ -71,8 +75,10 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`Mini LLM Gateway running on http://localhost:${PORT}`);
+const HOST = process.env.HOST || '0.0.0.0';
+
+server.listen(PORT, HOST, () => {
+  console.log(`Mini LLM Gateway running on http://${HOST}:${PORT}`);
 });
 
 function loadEnv(filePath) {
