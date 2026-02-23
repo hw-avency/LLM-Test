@@ -4,6 +4,7 @@ Kleine Web-App mit Chat UI zur Messung von LLM-Performance für:
 
 - OpenAI (`gpt-5.2`)
 - Gemini (`gemini-3-flash`)
+- Azure AI Foundry (`gpt-5.2`, via Azure Deployment)
 
 ## Start
 
@@ -15,6 +16,21 @@ npm start
 ```
 
 3. Öffnen: `http://localhost:3000`
+
+
+## Azure AI Foundry (GPT-5.2)
+
+Für den dritten Vergleichskanal (GPT-5.2 über Microsoft Foundry/Azure) setze in `.env`:
+
+```bash
+AZURE_FOUNDRY_ENDPOINT=https://<dein-resource-name>.openai.azure.com
+AZURE_FOUNDRY_API_KEY=<dein-key>
+AZURE_FOUNDRY_DEPLOYMENT=<deployment-name>
+AZURE_FOUNDRY_MODEL=gpt-5.2
+AZURE_FOUNDRY_API_VERSION=2024-10-21
+```
+
+Hinweis: `AZURE_FOUNDRY_MODEL` dient primär als Anzeige in der UI; geroutet wird über `AZURE_FOUNDRY_DEPLOYMENT`.
 
 ## Gemessene Kennzahlen
 

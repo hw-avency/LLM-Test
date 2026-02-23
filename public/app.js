@@ -19,7 +19,7 @@ const metricLabels = {
   streamingEnabled: 'Streaming'
 };
 
-const providerOrder = ['openai', 'gemini'];
+const providerOrder = ['openai', 'gemini', 'azure_foundry'];
 
 chatForm.addEventListener('submit', async (event) => {
   event.preventDefault();
