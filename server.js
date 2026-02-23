@@ -269,7 +269,7 @@ async function callOpenAI(model, prompt, thinkingMode, onProgress) {
     }
 
     buffer += decoder.decode(value, { stream: true });
-    const parts = buffer.split('\n\n');
+    const parts = buffer.split(/\r?\n\r?\n/u);
     buffer = parts.pop() ?? '';
 
     for (const part of parts) {
@@ -400,7 +400,7 @@ async function callGemini(model, prompt, thinkingMode, onProgress) {
     }
 
     buffer += decoder.decode(value, { stream: true });
-    const parts = buffer.split('\n\n');
+    const parts = buffer.split(/\r?\n\r?\n/u);
     buffer = parts.pop() ?? '';
 
     for (const part of parts) {
@@ -434,6 +434,41 @@ async function callGemini(model, prompt, thinkingMode, onProgress) {
         } catch {
           // ignore malformed chunks
         }
+      }
+    }
+  }
+
+  const remaining = buffer.trim();
+  if (remaining) {
+    const lines = remaining.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
+    for (const line of lines) {
+      if (!line.startsWith('data:')) continue;
+      const payload = line.slice(5).trim();
+      if (!payload) continue;
+
+      try {
+        const event = JSON.parse(payload);
+
+        const chunkText = event?.candidates?.[0]?.content?.parts
+          ?.map((part) => (typeof part?.text === 'string' ? part.text : ''))
+          .join('') || '';
+        if (chunkText) {
+          if (firstTokenMs === null) {
+            firstTokenMs = performance.now() - start;
+            onProgress?.({
+              provider: 'gemini',
+              model,
+              stage: 'first_token',
+              elapsedMs: Number(firstTokenMs.toFixed(2)),
+              message: 'Erstes sichtbares Token'
+            });
+          }
+          text += chunkText;
+        }
+        if (event?.usageMetadata) usage = event.usageMetadata;
+        if (event?.candidates?.[0]?.finishReason) finishReason = event.candidates[0].finishReason;
+      } catch {
+        // ignore malformed chunks
       }
     }
   }
