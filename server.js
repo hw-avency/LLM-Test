@@ -12,13 +12,19 @@ const publicDir = path.join(__dirname, 'public');
 loadEnv(path.join(__dirname, '.env'));
 
 const PORT = Number(process.env.PORT || 3000);
+const HOST = process.env.HOST || '0.0.0.0';
+
+const THINKING_PRESETS = {
+  off: 0,
+  on: 1024
+};
 
 const MODEL_OPTIONS = {
-  'openai:gpt-5.2': {
+  openai: {
     provider: 'openai',
     model: process.env.OPENAI_MODEL || 'gpt-5.2'
   },
-  'gemini:gemini-3-flash': {
+  gemini: {
     provider: 'gemini',
     model: process.env.GEMINI_MODEL || 'gemini-3-flash'
   }
@@ -41,27 +47,45 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && url.pathname === '/api/chat') {
       const body = await readJsonBody(req);
-      const { model, prompt } = body ?? {};
+      const { prompt, thinkingMode } = body ?? {};
 
-      if (!model || !prompt || typeof prompt !== 'string') {
-        return sendJson(res, 400, { error: 'model and prompt are required.' });
+      if (!prompt || typeof prompt !== 'string') {
+        return sendJson(res, 400, { error: 'prompt is required.' });
       }
 
-      const selected = MODEL_OPTIONS[model];
-      if (!selected) {
-        return sendJson(res, 400, { error: 'Unsupported model selection.' });
+      if (!['off', 'on'].includes(thinkingMode)) {
+        return sendJson(res, 400, { error: 'thinkingMode must be "off" or "on".' });
       }
 
-      const result = selected.provider === 'openai'
-        ? await callOpenAI(selected.model, prompt)
-        : await callGemini(selected.model, prompt);
+      const tasks = Object.values(MODEL_OPTIONS).map(async (selected) => {
+        const result = selected.provider === 'openai'
+          ? await callOpenAI(selected.model, prompt)
+          : await callGemini(selected.model, prompt, thinkingMode);
 
-      return sendJson(res, 200, {
-        provider: selected.provider,
-        model: selected.model,
-        response: result.text,
-        metrics: result.metrics
+        return {
+          provider: selected.provider,
+          model: selected.model,
+          response: result.text,
+          metrics: result.metrics
+        };
       });
+
+      const settled = await Promise.allSettled(tasks);
+      const results = settled.map((entry, index) => {
+        const selected = Object.values(MODEL_OPTIONS)[index];
+        if (entry.status === 'fulfilled') return entry.value;
+
+        return {
+          provider: selected.provider,
+          model: selected.model,
+          response: `Fehler: ${entry.reason instanceof Error ? entry.reason.message : 'Unbekannter Fehler'}`,
+          metrics: null,
+          error: true
+        };
+      });
+
+      const allFailed = results.every((result) => result.error);
+      return sendJson(res, allFailed ? 502 : 200, { results });
     }
 
     if (req.method === 'GET') {
@@ -74,8 +98,6 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 500, { error: message });
   }
 });
-
-const HOST = process.env.HOST || '0.0.0.0';
 
 server.listen(PORT, HOST, () => {
   console.log(`Mini LLM Gateway running on http://${HOST}:${PORT}`);
@@ -99,16 +121,8 @@ function loadEnv(filePath) {
   }
 }
 
-function getGeminiThinkingBudget() {
-  const raw = process.env.GEMINI_THINKING_BUDGET;
-  if (raw === undefined || raw === '') return undefined;
-
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new Error('GEMINI_THINKING_BUDGET must be a non-negative number.');
-  }
-
-  return Math.floor(parsed);
+function getGeminiThinkingBudget(mode) {
+  return THINKING_PRESETS[mode] ?? THINKING_PRESETS.off;
 }
 
 async function serveStaticFile(pathname, res) {
@@ -233,22 +247,19 @@ async function callOpenAI(model, prompt) {
   };
 }
 
-async function callGemini(model, prompt) {
+async function callGemini(model, prompt, thinkingMode) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
 
-  const thinkingBudget = getGeminiThinkingBudget();
+  const thinkingBudget = getGeminiThinkingBudget(thinkingMode);
   const requestBody = {
-    contents: [{ role: 'user', parts: [{ text: prompt }] }]
-  };
-
-  if (thinkingBudget !== undefined) {
-    requestBody.generationConfig = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: {
       thinkingConfig: {
         thinkingBudget
       }
-    };
-  }
+    }
+  };
 
   const start = performance.now();
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`;
@@ -326,7 +337,8 @@ async function callGemini(model, prompt) {
       tokensPerSecond,
       inputTokens: usage?.promptTokenCount ?? null,
       outputTokens,
-      finishReason
+      finishReason,
+      thinkingBudget
     }
   };
 }

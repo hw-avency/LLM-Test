@@ -9,25 +9,24 @@
   <body>
     <main class="container">
       <h1>Mini LLM Gateway</h1>
-      <p class="subtitle">Vergleiche Antwortzeiten zwischen OpenAI GPT‑5.2 und Gemini 3 Flash.</p>
+      <p class="subtitle">Paralleler Vergleich von OpenAI GPT‑5.2 und Gemini 3 Flash inkl. Thinking-Option.</p>
 
       <section class="controls">
-        <label for="modelSelect">Modell</label>
-        <select id="modelSelect"></select>
+        <label for="thinkingMode">Thinking</label>
+        <select id="thinkingMode">
+          <option value="off">Thinking Off</option>
+          <option value="on" selected>Thinking On</option>
+        </select>
       </section>
 
       <section class="chat-panel">
-        <div id="chatWindow" class="chat-window" aria-live="polite"></div>
         <form id="chatForm" class="chat-form">
           <textarea id="promptInput" rows="3" placeholder="Frage hier eingeben..." required></textarea>
-          <button type="submit" id="sendBtn">Senden</button>
+          <button type="submit" id="sendBtn">An beide Anbieter senden</button>
         </form>
       </section>
 
-      <section class="metrics-panel">
-        <h2>Performance</h2>
-        <dl id="metrics"></dl>
-      </section>
+      <section class="results-grid" id="resultsGrid"></section>
     </main>
 
     <script src="/app.js" type="module"></script>

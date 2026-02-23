@@ -1,46 +1,37 @@
-const modelSelect = document.getElementById('modelSelect');
-const chatWindow = document.getElementById('chatWindow');
 const chatForm = document.getElementById('chatForm');
 const promptInput = document.getElementById('promptInput');
 const sendBtn = document.getElementById('sendBtn');
-const metricsList = document.getElementById('metrics');
+const resultsGrid = document.getElementById('resultsGrid');
+const thinkingModeSelect = document.getElementById('thinkingMode');
 
 const metricLabels = {
   ttftMs: 'TTFT (ms)',
   totalLatencyMs: 'Gesamtlatenz (ms)',
   tokensPerSecond: 'Tokens / Sekunde',
   inputTokens: 'Input Tokens',
-  outputTokens: 'Output Tokens'
+  outputTokens: 'Output Tokens',
+  finishReason: 'Finish Reason',
+  thinkingBudget: 'Thinking Budget'
 };
 
-init();
-
-async function init() {
-  const response = await fetch('/api/models');
-  const models = await response.json();
-
-  models.forEach((model) => {
-    const option = document.createElement('option');
-    option.value = model.id;
-    option.textContent = model.label;
-    modelSelect.appendChild(option);
-  });
-}
+const providerOrder = ['openai', 'gemini'];
 
 chatForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const prompt = promptInput.value.trim();
   if (!prompt) return;
 
-  pushMessage('user', prompt);
-  promptInput.value = '';
   sendBtn.disabled = true;
+  promptInput.disabled = true;
 
   try {
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: modelSelect.value, prompt })
+      body: JSON.stringify({
+        prompt,
+        thinkingMode: thinkingModeSelect.value
+      })
     });
 
     const payload = await response.json();
@@ -48,34 +39,75 @@ chatForm.addEventListener('submit', async (event) => {
       throw new Error(payload.error || 'Gateway request failed');
     }
 
-    pushMessage('assistant', payload.response);
-    renderMetrics(payload.metrics);
+    renderResults(prompt, payload.results || []);
+    promptInput.value = '';
   } catch (error) {
-    pushMessage('assistant', `Fehler: ${error.message}`);
+    renderError(error.message);
   } finally {
     sendBtn.disabled = false;
+    promptInput.disabled = false;
+    promptInput.focus();
   }
 });
 
-function pushMessage(role, content) {
-  const message = document.createElement('article');
-  message.className = `message ${role}`;
-  message.textContent = content;
-  chatWindow.appendChild(message);
-  chatWindow.scrollTop = chatWindow.scrollHeight;
+function renderResults(prompt, results) {
+  resultsGrid.innerHTML = '';
+
+  providerOrder.forEach((provider) => {
+    const providerResult = results.find((result) => result.provider === provider);
+    const card = document.createElement('article');
+    card.className = 'result-card';
+
+    const title = document.createElement('h2');
+    title.textContent = provider.toUpperCase();
+
+    const model = document.createElement('p');
+    model.className = 'model';
+    model.textContent = providerResult?.model || 'n/a';
+
+    const promptBlock = document.createElement('div');
+    promptBlock.className = 'bubble user';
+    promptBlock.textContent = prompt;
+
+    const answerBlock = document.createElement('div');
+    answerBlock.className = `bubble assistant ${providerResult?.error ? 'error' : ''}`;
+    answerBlock.textContent = providerResult?.response || 'Keine Antwort';
+
+    const metrics = document.createElement('dl');
+    renderMetrics(metrics, providerResult?.metrics);
+
+    card.append(title, model, promptBlock, answerBlock, metrics);
+    resultsGrid.appendChild(card);
+  });
 }
 
-function renderMetrics(metrics) {
-  metricsList.innerHTML = '';
+function renderMetrics(container, metrics) {
+  container.innerHTML = '';
 
   Object.entries(metricLabels).forEach(([key, label]) => {
     const dt = document.createElement('dt');
     dt.textContent = label;
+
     const dd = document.createElement('dd');
-    const value = metrics[key];
+    const value = metrics?.[key];
     dd.textContent = value === null || value === undefined ? 'n/a' : String(value);
 
-    metricsList.appendChild(dt);
-    metricsList.appendChild(dd);
+    container.append(dt, dd);
   });
+}
+
+function renderError(message) {
+  resultsGrid.innerHTML = '';
+  const card = document.createElement('article');
+  card.className = 'result-card';
+
+  const title = document.createElement('h2');
+  title.textContent = 'Fehler';
+
+  const body = document.createElement('div');
+  body.className = 'bubble assistant error';
+  body.textContent = message;
+
+  card.append(title, body);
+  resultsGrid.appendChild(card);
 }
