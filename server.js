@@ -62,35 +62,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 400, { error: 'thinkingMode must be "off" or "on".' });
       }
 
-      const tasks = Object.values(MODEL_OPTIONS).map(async (selected) => {
-        const result = selected.provider === 'openai'
-          ? await callOpenAI(selected.model, prompt, thinkingMode)
-          : await callGemini(selected.model, prompt, thinkingMode);
-
-        return {
-          provider: selected.provider,
-          model: selected.model,
-          response: result.text,
-          metrics: result.metrics
-        };
-      });
-
-      const settled = await Promise.allSettled(tasks);
-      const results = settled.map((entry, index) => {
-        const selected = Object.values(MODEL_OPTIONS)[index];
-        if (entry.status === 'fulfilled') return entry.value;
-
-        return {
-          provider: selected.provider,
-          model: selected.model,
-          response: `Fehler: ${entry.reason instanceof Error ? entry.reason.message : 'Unbekannter Fehler'}`,
-          metrics: null,
-          error: true
-        };
-      });
-
-      const allFailed = results.every((result) => result.error);
-      return sendJson(res, allFailed ? 502 : 200, { results });
+      return streamChatResults(res, prompt, thinkingMode);
     }
 
     if (req.method === 'GET') {
@@ -176,6 +148,55 @@ function readJsonBody(req) {
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(payload));
+}
+
+async function streamChatResults(res, prompt, thinkingMode) {
+  res.writeHead(200, {
+    'Content-Type': 'application/x-ndjson; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive'
+  });
+
+  const pending = Object.values(MODEL_OPTIONS).map((selected) => runProviderRequest(selected, prompt, thinkingMode));
+
+  while (pending.length > 0) {
+    const winner = await Promise.race(
+      pending.map((task, index) => task.then((result) => ({ index, result })))
+    );
+
+    pending.splice(winner.index, 1);
+    writeNdjsonLine(res, { type: 'result', result: winner.result });
+  }
+
+  writeNdjsonLine(res, { type: 'done' });
+  res.end();
+}
+
+async function runProviderRequest(selected, prompt, thinkingMode) {
+  try {
+    const result = selected.provider === 'openai'
+      ? await callOpenAI(selected.model, prompt, thinkingMode)
+      : await callGemini(selected.model, prompt, thinkingMode);
+
+    return {
+      provider: selected.provider,
+      model: selected.model,
+      response: result.text,
+      metrics: result.metrics
+    };
+  } catch (error) {
+    return {
+      provider: selected.provider,
+      model: selected.model,
+      response: `Fehler: ${error instanceof Error ? error.message : 'Unbekannter Fehler'}`,
+      metrics: null,
+      error: true
+    };
+  }
+}
+
+function writeNdjsonLine(res, payload) {
+  res.write(`${JSON.stringify(payload)}\n`);
 }
 
 async function callOpenAI(model, prompt, thinkingMode) {

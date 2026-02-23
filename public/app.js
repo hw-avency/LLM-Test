@@ -24,6 +24,8 @@ chatForm.addEventListener('submit', async (event) => {
   sendBtn.disabled = true;
   promptInput.disabled = true;
 
+  const cards = renderPendingResults(prompt);
+
   try {
     const response = await fetch('/api/chat', {
       method: 'POST',
@@ -34,12 +36,16 @@ chatForm.addEventListener('submit', async (event) => {
       })
     });
 
-    const payload = await response.json();
     if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
       throw new Error(payload.error || 'Gateway request failed');
     }
 
-    renderResults(prompt, payload.results || []);
+    if (!response.body) {
+      throw new Error('Streaming wird von diesem Browser nicht unterstützt.');
+    }
+
+    await consumeStream(response.body, cards);
     promptInput.value = '';
   } catch (error) {
     renderError(error.message);
@@ -50,11 +56,52 @@ chatForm.addEventListener('submit', async (event) => {
   }
 });
 
-function renderResults(prompt, results) {
+async function consumeStream(stream, cards) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+
+    lines.forEach((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+
+      try {
+        const message = JSON.parse(trimmed);
+        if (message.type === 'result') {
+          updateProviderCard(cards, message.result);
+        }
+      } catch {
+        // ignore malformed chunk
+      }
+    });
+  }
+
+  const tail = buffer.trim();
+  if (!tail) return;
+
+  try {
+    const message = JSON.parse(tail);
+    if (message.type === 'result') {
+      updateProviderCard(cards, message.result);
+    }
+  } catch {
+    // ignore malformed tail
+  }
+}
+
+function renderPendingResults(prompt) {
   resultsGrid.innerHTML = '';
+  const cards = new Map();
 
   providerOrder.forEach((provider) => {
-    const providerResult = results.find((result) => result.provider === provider);
     const card = document.createElement('article');
     card.className = 'result-card';
 
@@ -63,22 +110,37 @@ function renderResults(prompt, results) {
 
     const model = document.createElement('p');
     model.className = 'model';
-    model.textContent = providerResult?.model || 'n/a';
+    model.textContent = 'Warte auf Antwort ...';
 
     const promptBlock = document.createElement('div');
     promptBlock.className = 'bubble user';
     promptBlock.textContent = prompt;
 
     const answerBlock = document.createElement('div');
-    answerBlock.className = `bubble assistant ${providerResult?.error ? 'error' : ''}`;
-    answerBlock.textContent = providerResult?.response || 'Keine Antwort';
+    answerBlock.className = 'bubble assistant loading';
+    answerBlock.innerHTML = '<span class="spinner" aria-hidden="true"></span><span>Lade Antwort ...</span>';
 
     const metrics = document.createElement('dl');
-    renderMetrics(metrics, providerResult?.metrics);
+    renderMetrics(metrics, null);
 
     card.append(title, model, promptBlock, answerBlock, metrics);
     resultsGrid.appendChild(card);
+
+    cards.set(provider, { model, answerBlock, metrics });
   });
+
+  return cards;
+}
+
+function updateProviderCard(cards, providerResult) {
+  const cardElements = cards.get(providerResult.provider);
+  if (!cardElements) return;
+
+  cardElements.model.textContent = providerResult?.model || 'n/a';
+  cardElements.answerBlock.className = `bubble assistant ${providerResult?.error ? 'error' : ''}`;
+  cardElements.answerBlock.textContent = providerResult?.response || 'Keine Antwort';
+
+  renderMetrics(cardElements.metrics, providerResult?.metrics);
 }
 
 function renderMetrics(container, metrics) {

@@ -112,3 +112,25 @@ dd {
   margin: 0;
   font-variant-numeric: tabular-nums;
 }
+
+.bubble.loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #0f3f2f;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #86efac;
+  border-top-color: transparent;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
