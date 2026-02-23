@@ -290,7 +290,8 @@ async function callOpenAI(model, prompt, thinkingMode) {
       outputTokens: outputTextTokens,
       billedOutputTokens,
       finishReason: finishReason ?? 'completed',
-      thinkingBudget: reasoningEffort
+      thinkingBudget: reasoningEffort,
+      streamingEnabled: true
     }
   };
 }
@@ -329,6 +330,7 @@ async function callGemini(model, prompt, thinkingMode) {
   let ttftMs = null;
   let usage = null;
   let finishReason = null;
+  let streamingEnabled = true;
 
   while (true) {
     const { value, done } = await reader.read();
@@ -372,6 +374,7 @@ async function callGemini(model, prompt, thinkingMode) {
       text = fallback.text;
       usage = fallback.usage ?? usage;
       finishReason = fallback.finishReason ?? finishReason;
+      streamingEnabled = false;
     }
   }
 
@@ -391,7 +394,8 @@ async function callGemini(model, prompt, thinkingMode) {
       outputTokens,
       billedOutputTokens,
       finishReason,
-      thinkingBudget
+      thinkingBudget,
+      streamingEnabled
     }
   };
 }
