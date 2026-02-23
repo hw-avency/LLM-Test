@@ -18,9 +18,9 @@ const MODEL_OPTIONS = {
     provider: 'openai',
     model: process.env.OPENAI_MODEL || 'gpt-5.2'
   },
-  'gemini:gemini-3-flash': {
+  'gemini:gemini-2.0-flash': {
     provider: 'gemini',
-    model: process.env.GEMINI_MODEL || 'gemini-3-flash'
+    model: process.env.GEMINI_MODEL || 'gemini-2.0-flash'
   }
 };
 

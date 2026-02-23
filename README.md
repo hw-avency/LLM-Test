@@ -3,7 +3,7 @@
 Kleine Web-App mit Chat UI zur Messung von LLM-Performance für:
 
 - OpenAI (`gpt-5.2`)
-- Gemini (`gemini-3-flash`)
+- Gemini (`gemini-2.0-flash`)
 
 ## Start
 
