@@ -12,7 +12,8 @@ const metricLabels = {
   outputTokens: 'Output Tokens (sichtbar)',
   billedOutputTokens: 'Output Tokens (gesamt)',
   finishReason: 'Finish Reason',
-  thinkingBudget: 'Thinking Budget'
+  thinkingBudget: 'Thinking Budget',
+  streamingEnabled: 'Streaming'
 };
 
 const providerOrder = ['openai', 'gemini'];
