@@ -274,8 +274,10 @@ async function callOpenAI(model, prompt, thinkingMode) {
   }
 
   const totalMs = performance.now() - start;
-  const tokensPerSecond = usage?.output_tokens && totalMs > 0
-    ? Number((usage.output_tokens / (totalMs / 1000)).toFixed(2))
+  const outputTextTokens = usage?.output_tokens_details?.text_tokens ?? usage?.output_tokens ?? null;
+  const billedOutputTokens = usage?.output_tokens ?? null;
+  const tokensPerSecond = billedOutputTokens && totalMs > 0
+    ? Number((billedOutputTokens / (totalMs / 1000)).toFixed(2))
     : null;
 
   return {
@@ -285,7 +287,8 @@ async function callOpenAI(model, prompt, thinkingMode) {
       totalLatencyMs: Number(totalMs.toFixed(2)),
       tokensPerSecond,
       inputTokens: usage?.input_tokens ?? null,
-      outputTokens: usage?.output_tokens ?? null,
+      outputTokens: outputTextTokens,
+      billedOutputTokens,
       finishReason: finishReason ?? 'completed',
       thinkingBudget: reasoningEffort
     }
@@ -373,6 +376,7 @@ async function callGemini(model, prompt, thinkingMode) {
   }
 
   const outputTokens = usage?.candidatesTokenCount ?? null;
+  const billedOutputTokens = outputTokens;
   const tokensPerSecond = outputTokens && totalMs > 0
     ? Number((outputTokens / (totalMs / 1000)).toFixed(2))
     : null;
@@ -385,6 +389,7 @@ async function callGemini(model, prompt, thinkingMode) {
       tokensPerSecond,
       inputTokens: usage?.promptTokenCount ?? null,
       outputTokens,
+      billedOutputTokens,
       finishReason,
       thinkingBudget
     }

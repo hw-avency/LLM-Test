@@ -9,7 +9,8 @@ const metricLabels = {
   totalLatencyMs: 'Gesamtlatenz (ms)',
   tokensPerSecond: 'Tokens / Sekunde',
   inputTokens: 'Input Tokens',
-  outputTokens: 'Output Tokens',
+  outputTokens: 'Output Tokens (sichtbar)',
+  billedOutputTokens: 'Output Tokens (gesamt)',
   finishReason: 'Finish Reason',
   thinkingBudget: 'Thinking Budget'
 };

@@ -21,7 +21,9 @@ npm start
 - **TTFT (ms)**: Zeit bis zum ersten Token
 - **Gesamtlatenz (ms)**: volle End-to-End-Dauer
 - **Tokens / Sekunde**: effektiver Output-Durchsatz
-- **Input / Output Tokens** (falls vom Provider geliefert)
+- **Input Tokens** (falls vom Provider geliefert)
+- **Output Tokens (sichtbar)**: geschätzte Tokens der angezeigten Antwort
+- **Output Tokens (gesamt)**: vom Provider abgerechnete Output-Tokens (kann höher sein, z. B. wegen interner Reasoning-Tokens)
 
 ## Gemini Thinking / TTFT
 
