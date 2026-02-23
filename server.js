@@ -102,6 +102,13 @@ function getGeminiThinkingBudget(mode) {
   return THINKING_PRESETS[mode] ?? THINKING_PRESETS.off;
 }
 
+function estimateVisibleTokens(text) {
+  const normalized = String(text ?? '').trim();
+  if (!normalized) return 0;
+
+  return normalized.split(/\s+/u).length;
+}
+
 async function serveStaticFile(pathname, res) {
   const normalized = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
   const safePath = path.normalize(normalized).replace(/^(\.\.(\/|\\|$))+/, '');
@@ -274,8 +281,10 @@ async function callOpenAI(model, prompt, thinkingMode) {
   }
 
   const totalMs = performance.now() - start;
-  const outputTextTokens = usage?.output_tokens_details?.text_tokens ?? usage?.output_tokens ?? null;
-  const billedOutputTokens = usage?.output_tokens ?? null;
+  const estimatedVisibleTokens = estimateVisibleTokens(text);
+  const outputTextTokens = usage?.output_tokens_details?.text_tokens
+    ?? (estimatedVisibleTokens > 0 ? estimatedVisibleTokens : null);
+  const billedOutputTokens = usage?.output_tokens ?? outputTextTokens;
   const tokensPerSecond = billedOutputTokens && totalMs > 0
     ? Number((billedOutputTokens / (totalMs / 1000)).toFixed(2))
     : null;
@@ -378,8 +387,11 @@ async function callGemini(model, prompt, thinkingMode) {
     }
   }
 
-  const outputTokens = usage?.candidatesTokenCount ?? null;
-  const billedOutputTokens = outputTokens;
+  const estimatedVisibleTokens = estimateVisibleTokens(text);
+  const outputTokens = usage?.candidatesTokenCount
+    ?? (estimatedVisibleTokens > 0 ? estimatedVisibleTokens : null);
+  const thinkingTokens = usage?.thoughtsTokenCount ?? 0;
+  const billedOutputTokens = outputTokens === null ? null : outputTokens + thinkingTokens;
   const tokensPerSecond = outputTokens && totalMs > 0
     ? Number((outputTokens / (totalMs / 1000)).toFixed(2))
     : null;
