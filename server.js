@@ -164,7 +164,12 @@ async function streamChatResults(res, prompt, thinkingMode) {
     Connection: 'keep-alive'
   });
 
-  const pending = Object.values(MODEL_OPTIONS).map((selected) => runProviderRequest(selected, prompt, thinkingMode));
+  const pending = Object.values(MODEL_OPTIONS).map((selected) => runProviderRequest(
+    selected,
+    prompt,
+    thinkingMode,
+    (progress) => writeNdjsonLine(res, { type: 'progress', progress })
+  ));
 
   while (pending.length > 0) {
     const winner = await Promise.race(
@@ -179,11 +184,19 @@ async function streamChatResults(res, prompt, thinkingMode) {
   res.end();
 }
 
-async function runProviderRequest(selected, prompt, thinkingMode) {
+async function runProviderRequest(selected, prompt, thinkingMode, onProgress) {
+  onProgress?.({
+    provider: selected.provider,
+    model: selected.model,
+    stage: 'started',
+    elapsedMs: 0,
+    message: 'Request gestartet'
+  });
+
   try {
     const result = selected.provider === 'openai'
-      ? await callOpenAI(selected.model, prompt, thinkingMode)
-      : await callGemini(selected.model, prompt, thinkingMode);
+      ? await callOpenAI(selected.model, prompt, thinkingMode, onProgress)
+      : await callGemini(selected.model, prompt, thinkingMode, onProgress);
 
     return {
       provider: selected.provider,
@@ -206,7 +219,7 @@ function writeNdjsonLine(res, payload) {
   res.write(`${JSON.stringify(payload)}\n`);
 }
 
-async function callOpenAI(model, prompt, thinkingMode) {
+async function callOpenAI(model, prompt, thinkingMode, onProgress) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY is not configured.');
 
@@ -235,7 +248,8 @@ async function callOpenAI(model, prompt, thinkingMode) {
   const decoder = new TextDecoder();
   let buffer = '';
   let text = '';
-  let ttftMs = null;
+  let firstChunkMs = null;
+  let firstTokenMs = null;
   let usage = null;
   let finishReason = null;
 
@@ -243,7 +257,16 @@ async function callOpenAI(model, prompt, thinkingMode) {
     const { value, done } = await reader.read();
     if (done) break;
 
-    if (ttftMs === null) ttftMs = performance.now() - start;
+    if (firstChunkMs === null) {
+      firstChunkMs = performance.now() - start;
+      onProgress?.({
+        provider: 'openai',
+        model,
+        stage: 'connected',
+        elapsedMs: Number(firstChunkMs.toFixed(2)),
+        message: 'Erster Streaming-Chunk eingetroffen'
+      });
+    }
 
     buffer += decoder.decode(value, { stream: true });
     const parts = buffer.split('\n\n');
@@ -259,7 +282,16 @@ async function callOpenAI(model, prompt, thinkingMode) {
         try {
           const event = JSON.parse(payload);
           if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') {
-            if (ttftMs === null) ttftMs = performance.now() - start;
+            if (firstTokenMs === null) {
+              firstTokenMs = performance.now() - start;
+              onProgress?.({
+                provider: 'openai',
+                model,
+                stage: 'first_token',
+                elapsedMs: Number(firstTokenMs.toFixed(2)),
+                message: 'Erstes sichtbares Token'
+              });
+            }
             text += event.delta;
           }
 
@@ -281,6 +313,13 @@ async function callOpenAI(model, prompt, thinkingMode) {
   }
 
   const totalMs = performance.now() - start;
+  onProgress?.({
+    provider: 'openai',
+    model,
+    stage: 'completed',
+    elapsedMs: Number(totalMs.toFixed(2)),
+    message: 'Antwort vollständig'
+  });
   const estimatedVisibleTokens = estimateVisibleTokens(text);
   const outputTextTokens = usage?.output_tokens_details?.text_tokens
     ?? (estimatedVisibleTokens > 0 ? estimatedVisibleTokens : null);
@@ -292,8 +331,11 @@ async function callOpenAI(model, prompt, thinkingMode) {
   return {
     text: text.trim() || '[No text returned]',
     metrics: {
-      ttftMs: ttftMs ? Number(ttftMs.toFixed(2)) : null,
+      ttftMs: firstChunkMs ? Number(firstChunkMs.toFixed(2)) : null,
+      firstTokenMs: firstTokenMs ? Number(firstTokenMs.toFixed(2)) : null,
       totalLatencyMs: Number(totalMs.toFixed(2)),
+      postTtftLatencyMs: firstChunkMs ? Number((totalMs - firstChunkMs).toFixed(2)) : null,
+      generationMs: firstTokenMs ? Number((totalMs - firstTokenMs).toFixed(2)) : null,
       tokensPerSecond,
       inputTokens: usage?.input_tokens ?? null,
       outputTokens: outputTextTokens,
@@ -305,7 +347,7 @@ async function callOpenAI(model, prompt, thinkingMode) {
   };
 }
 
-async function callGemini(model, prompt, thinkingMode) {
+async function callGemini(model, prompt, thinkingMode, onProgress) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
 
@@ -336,7 +378,8 @@ async function callGemini(model, prompt, thinkingMode) {
   const decoder = new TextDecoder();
   let buffer = '';
   let text = '';
-  let ttftMs = null;
+  let firstChunkMs = null;
+  let firstTokenMs = null;
   let usage = null;
   let finishReason = null;
   let streamingEnabled = true;
@@ -345,7 +388,16 @@ async function callGemini(model, prompt, thinkingMode) {
     const { value, done } = await reader.read();
     if (done) break;
 
-    if (ttftMs === null) ttftMs = performance.now() - start;
+    if (firstChunkMs === null) {
+      firstChunkMs = performance.now() - start;
+      onProgress?.({
+        provider: 'gemini',
+        model,
+        stage: 'connected',
+        elapsedMs: Number(firstChunkMs.toFixed(2)),
+        message: 'Erster Streaming-Chunk eingetroffen'
+      });
+    }
 
     buffer += decoder.decode(value, { stream: true });
     const parts = buffer.split('\n\n');
@@ -360,12 +412,23 @@ async function callGemini(model, prompt, thinkingMode) {
 
         try {
           const event = JSON.parse(payload);
-          if (ttftMs === null) ttftMs = performance.now() - start;
 
           const chunkText = event?.candidates?.[0]?.content?.parts
             ?.map((part) => (typeof part?.text === 'string' ? part.text : ''))
             .join('') || '';
-          if (chunkText) text += chunkText;
+          if (chunkText) {
+            if (firstTokenMs === null) {
+              firstTokenMs = performance.now() - start;
+              onProgress?.({
+                provider: 'gemini',
+                model,
+                stage: 'first_token',
+                elapsedMs: Number(firstTokenMs.toFixed(2)),
+                message: 'Erstes sichtbares Token'
+              });
+            }
+            text += chunkText;
+          }
           if (event?.usageMetadata) usage = event.usageMetadata;
           if (event?.candidates?.[0]?.finishReason) finishReason = event.candidates[0].finishReason;
         } catch {
@@ -376,6 +439,13 @@ async function callGemini(model, prompt, thinkingMode) {
   }
 
   const totalMs = performance.now() - start;
+  onProgress?.({
+    provider: 'gemini',
+    model,
+    stage: 'completed',
+    elapsedMs: Number(totalMs.toFixed(2)),
+    message: 'Antwort vollständig'
+  });
 
   if (!text.trim()) {
     const fallback = await callGeminiNonStreaming(model, requestBody, apiKey);
@@ -399,8 +469,11 @@ async function callGemini(model, prompt, thinkingMode) {
   return {
     text: text.trim() || '[No text returned]',
     metrics: {
-      ttftMs: ttftMs ? Number(ttftMs.toFixed(2)) : null,
+      ttftMs: firstChunkMs ? Number(firstChunkMs.toFixed(2)) : null,
+      firstTokenMs: firstTokenMs ? Number(firstTokenMs.toFixed(2)) : null,
       totalLatencyMs: Number(totalMs.toFixed(2)),
+      postTtftLatencyMs: firstChunkMs ? Number((totalMs - firstChunkMs).toFixed(2)) : null,
+      generationMs: firstTokenMs ? Number((totalMs - firstTokenMs).toFixed(2)) : null,
       tokensPerSecond,
       inputTokens: usage?.promptTokenCount ?? null,
       outputTokens,

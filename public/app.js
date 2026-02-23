@@ -6,7 +6,10 @@ const thinkingModeSelect = document.getElementById('thinkingMode');
 
 const metricLabels = {
   ttftMs: 'TTFT (ms)',
+  firstTokenMs: 'Erstes sichtbares Token (ms)',
   totalLatencyMs: 'Gesamtlatenz (ms)',
+  postTtftLatencyMs: 'Zeit nach TTFT (ms)',
+  generationMs: 'Generierungszeit (ms)',
   tokensPerSecond: 'Tokens / Sekunde',
   inputTokens: 'Input Tokens',
   outputTokens: 'Output Tokens (sichtbar)',
@@ -71,31 +74,28 @@ async function consumeStream(stream, cards) {
     const lines = buffer.split('\n');
     buffer = lines.pop() ?? '';
 
-    lines.forEach((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return;
-
-      try {
-        const message = JSON.parse(trimmed);
-        if (message.type === 'result') {
-          updateProviderCard(cards, message.result);
-        }
-      } catch {
-        // ignore malformed chunk
-      }
-    });
+    lines.forEach((line) => processStreamLine(line, cards));
   }
 
   const tail = buffer.trim();
-  if (!tail) return;
+  if (tail) processStreamLine(tail, cards);
+}
+
+function processStreamLine(line, cards) {
+  const trimmed = line.trim();
+  if (!trimmed) return;
 
   try {
-    const message = JSON.parse(tail);
+    const message = JSON.parse(trimmed);
     if (message.type === 'result') {
       updateProviderCard(cards, message.result);
     }
+
+    if (message.type === 'progress') {
+      updateProviderProgress(cards, message.progress);
+    }
   } catch {
-    // ignore malformed tail
+    // ignore malformed chunks
   }
 }
 
@@ -114,6 +114,15 @@ function renderPendingResults(prompt) {
     model.className = 'model';
     model.textContent = 'Warte auf Antwort ...';
 
+    const timeline = document.createElement('ul');
+    timeline.className = 'timeline';
+    ['started', 'connected', 'first_token', 'completed'].forEach((stage) => {
+      const step = document.createElement('li');
+      step.dataset.stage = stage;
+      step.innerHTML = `<span class="dot" aria-hidden="true"></span><span class="label">${stageLabel(stage)}</span><span class="time">–</span>`;
+      timeline.appendChild(step);
+    });
+
     const promptBlock = document.createElement('div');
     promptBlock.className = 'bubble user';
     promptBlock.textContent = prompt;
@@ -125,13 +134,25 @@ function renderPendingResults(prompt) {
     const metrics = document.createElement('dl');
     renderMetrics(metrics, null);
 
-    card.append(title, model, promptBlock, answerBlock, metrics);
+    card.append(title, model, timeline, promptBlock, answerBlock, metrics);
     resultsGrid.appendChild(card);
 
-    cards.set(provider, { model, answerBlock, metrics });
+    cards.set(provider, { model, timeline, answerBlock, metrics });
   });
 
   return cards;
+}
+
+function updateProviderProgress(cards, progress) {
+  const cardElements = cards.get(progress?.provider);
+  if (!cardElements) return;
+
+  const step = cardElements.timeline.querySelector(`[data-stage="${progress.stage}"]`);
+  if (!step) return;
+
+  step.classList.add('done');
+  const time = step.querySelector('.time');
+  time.textContent = `${Number(progress.elapsedMs ?? 0).toFixed(2)} ms`;
 }
 
 function updateProviderCard(cards, providerResult) {
@@ -158,6 +179,15 @@ function renderMetrics(container, metrics) {
 
     container.append(dt, dd);
   });
+}
+
+function stageLabel(stage) {
+  return {
+    started: 'Start',
+    connected: 'Erster Chunk (TTFT)',
+    first_token: 'Erstes sichtbares Token',
+    completed: 'Fertig'
+  }[stage] || stage;
 }
 
 function renderError(message) {
