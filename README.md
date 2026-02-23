@@ -32,6 +32,9 @@ AZURE_FOUNDRY_API_VERSION=2024-10-21
 
 Hinweis: `AZURE_FOUNDRY_MODEL` dient primär als Anzeige in der UI; geroutet wird über `AZURE_FOUNDRY_DEPLOYMENT`.
 
+Kompatibilität: alternativ werden auch klassische Azure-Variablen erkannt:
+`AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_MODEL`, `AZURE_OPENAI_API_VERSION`.
+
 ## Gemessene Kennzahlen
 
 - **TTFT (ms)**: Zeit bis zum ersten Token

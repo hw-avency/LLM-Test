@@ -19,7 +19,31 @@ const metricLabels = {
   streamingEnabled: 'Streaming'
 };
 
-const providerOrder = ['openai', 'gemini', 'azure_foundry'];
+const providerLabels = new Map();
+let providerOrder = ['openai', 'gemini', 'azure'];
+
+initializeProviders();
+
+async function initializeProviders() {
+  try {
+    const response = await fetch('/api/models');
+    if (!response.ok) return;
+
+    const models = await response.json();
+    if (!Array.isArray(models) || models.length === 0) return;
+
+    providerOrder = models
+      .map((entry) => (typeof entry?.id === 'string' ? entry.id : null))
+      .filter(Boolean);
+
+    models.forEach((entry) => {
+      if (typeof entry?.id !== 'string') return;
+      providerLabels.set(entry.id, entry?.label || entry.id.toUpperCase());
+    });
+  } catch {
+    // fallback to default provider order
+  }
+}
 
 chatForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -108,7 +132,7 @@ function renderPendingResults(prompt) {
     card.className = 'result-card';
 
     const title = document.createElement('h2');
-    title.textContent = provider.toUpperCase();
+    title.textContent = providerLabels.get(provider) || provider.toUpperCase();
 
     const model = document.createElement('p');
     model.className = 'model';

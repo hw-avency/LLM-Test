@@ -33,9 +33,9 @@ const MODEL_OPTIONS = {
     provider: 'gemini',
     model: process.env.GEMINI_MODEL || 'gemini-3-flash'
   },
-  azure_foundry: {
-    provider: 'azure_foundry',
-    model: process.env.AZURE_FOUNDRY_MODEL || 'gpt-5.2'
+  azure: {
+    provider: 'azure',
+    model: process.env.AZURE_FOUNDRY_MODEL || process.env.AZURE_OPENAI_MODEL || 'gpt-5.2'
   }
 };
 
@@ -226,7 +226,7 @@ async function runModelCall(selected, prompt, thinkingMode, onProgress) {
     return callGemini(selected.model, prompt, thinkingMode, onProgress);
   }
 
-  if (selected.provider === 'azure_foundry') {
+  if (selected.provider === 'azure' || selected.provider === 'azure_foundry') {
     return callAzureFoundry(selected.model, prompt, thinkingMode, onProgress);
   }
 
@@ -565,10 +565,10 @@ async function callGeminiNonStreaming(model, requestBody, apiKey) {
 }
 
 async function callAzureFoundry(model, prompt, thinkingMode, onProgress) {
-  const endpoint = process.env.AZURE_FOUNDRY_ENDPOINT;
-  const apiKey = process.env.AZURE_FOUNDRY_API_KEY;
-  const deployment = process.env.AZURE_FOUNDRY_DEPLOYMENT;
-  const apiVersion = process.env.AZURE_FOUNDRY_API_VERSION || '2024-10-21';
+  const endpoint = process.env.AZURE_FOUNDRY_ENDPOINT || process.env.AZURE_OPENAI_ENDPOINT;
+  const apiKey = process.env.AZURE_FOUNDRY_API_KEY || process.env.AZURE_OPENAI_API_KEY;
+  const deployment = process.env.AZURE_FOUNDRY_DEPLOYMENT || process.env.AZURE_OPENAI_DEPLOYMENT;
+  const apiVersion = process.env.AZURE_FOUNDRY_API_VERSION || process.env.AZURE_OPENAI_API_VERSION || '2024-10-21';
 
   if (!endpoint) throw new Error('AZURE_FOUNDRY_ENDPOINT is not configured.');
   if (!apiKey) throw new Error('AZURE_FOUNDRY_API_KEY is not configured.');
@@ -618,7 +618,7 @@ async function callAzureFoundry(model, prompt, thinkingMode, onProgress) {
     if (firstChunkMs === null) {
       firstChunkMs = performance.now() - start;
       onProgress?.({
-        provider: 'azure_foundry',
+        provider: 'azure',
         model,
         stage: 'connected',
         elapsedMs: Number(firstChunkMs.toFixed(2)),
@@ -644,7 +644,7 @@ async function callAzureFoundry(model, prompt, thinkingMode, onProgress) {
             if (firstTokenMs === null) {
               firstTokenMs = performance.now() - start;
               onProgress?.({
-                provider: 'azure_foundry',
+                provider: 'azure',
                 model,
                 stage: 'first_token',
                 elapsedMs: Number(firstTokenMs.toFixed(2)),
@@ -666,7 +666,7 @@ async function callAzureFoundry(model, prompt, thinkingMode, onProgress) {
 
   const totalMs = performance.now() - start;
   onProgress?.({
-    provider: 'azure_foundry',
+    provider: 'azure',
     model,
     stage: 'completed',
     elapsedMs: Number(totalMs.toFixed(2)),
