@@ -29,14 +29,18 @@ const MODEL_OPTIONS = {
     provider: 'openai',
     model: process.env.OPENAI_MODEL || 'gpt-5.2'
   },
-  gemini: {
-    provider: 'gemini',
-    model: process.env.GEMINI_MODEL || 'gemini-3-flash'
-  },
   azure: {
     provider: 'azure',
     model: process.env.AZURE_FOUNDRY_MODEL || process.env.AZURE_OPENAI_MODEL || 'gpt-5.2'
+  },
+  gemini: {
+    provider: 'gemini',
+    model: process.env.GEMINI_MODEL || 'gemini-3-flash'
   }
+};
+
+const PROVIDER_LABELS = {
+  gemini: 'GEMINI · Flash'
 };
 
 const server = http.createServer(async (req, res) => {
@@ -50,7 +54,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/models') {
       return sendJson(res, 200, Object.entries(MODEL_OPTIONS).map(([id, meta]) => ({
         id,
-        label: `${meta.provider.toUpperCase()} · ${meta.model}`
+        label: PROVIDER_LABELS[id] || `${meta.provider.toUpperCase()} · ${meta.model}`
       })));
     }
 
